@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>OSM bus routes</title>
+<script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+<link rel="stylesheet" href="http://openlayers.org/en/v3.10.1/css/ol.css" type="text/css">
+<script src="http://openlayers.org/en/v3.10.1/build/ol-debug.js"></script>
+
+</head>
+<body>
+<div class="container-fluid">
+
+<div class="row-fluid">
+  <div class="span12"><p>Bus routes, data by <a href="http://www.openstreetmap.org/">OpenStreetMap</a> relased under <a href="http://opendatacommons.org/licenses/odbl/">ODbL</a>. Provided by <a href="http://www.overpass-api.de/">Overpass API</a>.</p>
+  <p>Bus routes are red strokes, nodes in red are any nodes that are members of a route relation. The green dashed arrows connect the nodes with role stop in order of appearance in the relation's member list.</span>
+  <div class="span12">
+    <div id="map" class="map"></div>
+  </div>
+</div>
+
+</div>
+<script>
+var styles = {
+  "busroute": [
+    new ol.style.Style({
+      stroke: new ol.style.Stroke({
+        color: 'rgba(255, 100, 100, 1.0)',
+        width: 2
+      })
+    })
+  ],
+  "trainroute": [
+    new ol.style.Style({
+      stroke: new ol.style.Stroke({
+        color: 'rgba(255, 0, 0, 1.0)',
+        width: 2
+      })
+    })
+  ],
+  "stoproute": [
+    new ol.style.Style({
+      stroke: new ol.style.Stroke({
+        color: 'rgba(0, 254, 0, 1.0)',
+        width: 2,
+        lineDash: [4,6]
+      })
+    })
+  ],
+  "busstop": [
+    new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 7,
+        fill: new ol.style.Fill({
+          color: 'rgba(255, 0, 0, 1.0)'
+        }),
+        stroke: null
+      })
+    })
+  ]
+};
+Array.prototype.first = function(){
+  return this[0];
+};
+Array.prototype.last = function(){
+  return this[this.length-1];
+};
+var OverpassJsonFormat=function(settings){
+  ol.format.GeoJSON.call(this, settings);
+};
+ol.inherits(OverpassJsonFormat, ol.format.GeoJSON);
+OverpassJsonFormat.prototype.readFeatures=function(objectSource, opt_options){
+  var object=JSON.parse(objectSource);
+  var features=[];
+  for(var fi=0; fi<object.elements.length; fi++){
+    var coordinates=[];
+    var stopRoute = new ol.geom.LineString([]);
+    function pushFeature(){
+      var featureGeometry = ol.format.Feature.transformWithOptions(new ol.geom.LineString(coordinates), false, opt_options);
+      coordinates=[];
+      var feature = new ol.Feature();
+      feature.stylename="busroute";
+      feature.setGeometry(featureGeometry);
+      features.push( feature );
+    }
+    function waysConnected(way1, way2){
+      var connectsToPreviousWay = way1.geometry.first().lon==way2.geometry.first().lon || way1.geometry.first().lon==way2.geometry.last().lon || way1.geometry.last().lon==way2.geometry.first().lon || way1.geometry.last().lon==way2.geometry.last().lon;
+      return connectsToPreviousWay;
+    }
+    var relationMembers = object.elements[fi].members;
+    var wayMembers=[];
+    for(var mi=0; mi<relationMembers.length; mi++){
+      var member=relationMembers[mi];
+      if(member.type==="way"){
+        wayMembers.push(member);
+      } else if(member.type==="node"){
+        var pointCoordinates = ol.proj.transform([member.lon, member.lat], this.defaultDataProjection, opt_options.featureProjection);
+        var pointGeometry = ol.format.Feature.transformWithOptions(new ol.geom.Point(
+          pointCoordinates
+        ), false, opt_options);
+        var feature = new ol.Feature();
+        feature.stylename="busstop";
+        feature.setGeometry(pointGeometry);
+        features.push( feature );
+        
+        if(member.role==="stop"){
+          stopRoute.appendCoordinate(pointCoordinates);
+        }
+      }
+    }
+    var lastEndPoint = null;
+    for(var wi=0; wi<wayMembers.length; wi++){
+      var member = wayMembers[wi];
+      var memberGeometry = member.geometry;
+      var forward;
+      if(wi>0 && !(memberGeometry.first().lon==lastEndPoint.lon || memberGeometry.last().lon==lastEndPoint.lon)){
+        lastEndPoint = null;
+      }
+      if(wayMembers.length==1){
+        forward = true;
+      } else if(lastEndPoint!==null){
+        forward = memberGeometry.first().lon==lastEndPoint.lon;
+      } else if(wi<wayMembers.length-1 && waysConnected(member, wayMembers[wi+1])){
+        forward = memberGeometry.last().lon==wayMembers[wi+1].geometry.first().lon || memberGeometry.last().lon==wayMembers[wi+1].geometry.last().lon;
+      } else {
+        forward = true;
+      }
+      
+      if(wi>0){
+        var previousWay = wayMembers[wi-1];
+        if(lastEndPoint===null){
+          pushFeature();
+        }
+      }
+      for(var gi=0; gi<memberGeometry.length; gi++){
+        var pointGeometry;
+        if(forward){
+          pointGeometry = memberGeometry[gi];
+        } else {
+          pointGeometry = memberGeometry[memberGeometry.length - gi - 1];
+        }
+        coordinates.push(ol.proj.transform([pointGeometry.lon, pointGeometry.lat], this.defaultDataProjection, opt_options.featureProjection));
+        
+        lastEndPoint = pointGeometry;
+      }
+    }
+    pushFeature();
+    
+    if(stopRoute.getCoordinates().length>1){
+      var featureGeometry = ol.format.Feature.transformWithOptions(stopRoute, false, opt_options);
+      coordinates=[];
+      var feature = new ol.Feature();
+      feature.stylename="stoproute";
+      feature.setGeometry(featureGeometry);
+      features.push( feature );
+    }
+  }
+  window.feat=features;
+  return features;
+};
+OverpassJsonFormat.prototype.readFeature=console.log;
+var geoJSONFormat = new OverpassJsonFormat();
+var vectorSource = new ol.source.Vector({
+  format: geoJSONFormat,
+  url: function(extent, resolution, projection) {
+    var epsg4326Extent =
+        ol.proj.transformExtent(extent, projection, 'EPSG:4326');
+    var overpassExtent = function(olExtent){
+      return [olExtent[1], olExtent[0], olExtent[3], olExtent[2]];
+    };
+    var query='[out:json];'
+      //+ 'relation('+overpassExtent(epsg4326Extent).join(',')+')[type=route][route~"bus|train"];'
+      + 'relation('+overpassExtent(epsg4326Extent).join(',')+')[type=route][route~"bus"];'
+      + 'out geom qt;';
+    return 'http://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
+  },
+  strategy: ol.loadingstrategy.tile(ol.tilegrid.createXYZ({
+    maxZoom: 14,
+    tileSize: [2000, 2000]
+  }))
+});
+
+var vector = new ol.layer.Vector({
+  source: vectorSource,
+  style: function(feature, resolution) {
+    var featureStyle=[
+      styles[feature.stylename][0]
+    ];
+    if(feature.stylename==="stoproute"){
+      var geometry = feature.getGeometry();
+      geometry.forEachSegment(function(start, end) {
+        var dx = end[0] - start[0];
+        var dy = end[1] - start[1];
+        var rotation = Math.atan2(dy, dx);
+        // arrows
+        featureStyle.push(new ol.style.Style({
+          geometry: new ol.geom.Point(end),
+          image: new ol.style.Icon({
+            src: 'arrow.png',
+            anchor: [0.75, 0.5],
+            rotateWithView: false,
+            rotation: -rotation
+          })
+        }));
+      });
+    }
+    return featureStyle;
+  },
+  maxResolution: 20
+});
+
+var raster = new ol.layer.Tile({
+  source: /*new ol.source.BingMaps({
+    imagerySet: 'Aerial',
+    key: '...'
+  })*/ new ol.source.OSM()
+});
+/**
+ * Convert OSM tiles to grayscale.
+ */
+raster.on('postcompose', function(event) {
+  var context = event.context;
+  var canvas = context.canvas;
+  var width = canvas.width;
+  var height = canvas.height;
+  var inputData = context.getImageData(0, 0, width, height).data;
+
+  var output = context.createImageData(width, height);
+  var outputData = output.data;
+  
+  for (var pixelY = 0; pixelY < height; ++pixelY) {
+    var pixelsAbove = pixelY * width;
+    for (var pixelX = 0; pixelX < width; ++pixelX) {
+      var outputIndex = (pixelsAbove + pixelX) * 4;
+      var r=inputData[outputIndex];
+      var g=inputData[outputIndex+1];
+      var b=inputData[outputIndex+2];
+      var grayValue = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      outputData[outputIndex] = grayValue;
+      outputData[outputIndex + 1] = grayValue;
+      outputData[outputIndex + 2] = grayValue;
+      outputData[outputIndex + 3] = inputData[outputIndex+3];
+    }
+  }
+  context.putImageData(output, 0, 0);
+});
+
+var map = new ol.Map({
+  layers: [raster, vector],
+  target: document.getElementById('map'),
+  controls: ol.control.defaults({ attribution: false }),
+  view: new ol.View({
+    center: [1085558.6757060732, 6027212.554342718],
+    maxZoom: 19,
+    zoom: 13
+  })
+});
+
+</script>
+</body>
+</html>
