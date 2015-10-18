@@ -60,20 +60,50 @@ var styles = {
     })
   ]
 };
+
 Array.prototype.first = function(){
   return this[0];
 };
 Array.prototype.last = function(){
   return this[this.length-1];
 };
+
+var processedIds=[];
+
 var OverpassJsonFormat=function(settings){
   ol.format.GeoJSON.call(this, settings);
 };
 ol.inherits(OverpassJsonFormat, ol.format.GeoJSON);
 OverpassJsonFormat.prototype.readFeatures=function(objectSource, opt_options){
   var object=JSON.parse(objectSource);
+  function getCaption(id){
+    for(var fi=0; fi<object.elements.length; fi++){
+      var element=object.elements[fi];
+      if(element.tags && element.id===id){
+        var caption=[];
+        if(element.tags.name){
+          caption.push(element.tags.name);
+        }
+        if(element.tags.route_ref){
+          caption.push(element.tags.route_ref);
+        }
+        return caption.join(" ");
+      }
+    }
+    return undefined;
+  }
   var features=[];
   for(var fi=0; fi<object.elements.length; fi++){
+    var element=object.elements[fi];
+    if(processedIds[element.id]){
+      // Data from Overpass API overlaps, skip everything already seen.
+      continue;
+    } else {
+      processedIds[element.id]=true;
+    }
+    if(element.type!=="relation"){
+      continue;
+    }
     var coordinates=[];
     var stopRoute = new ol.geom.LineString([]);
     function pushFeature(){
@@ -88,7 +118,7 @@ OverpassJsonFormat.prototype.readFeatures=function(objectSource, opt_options){
       var connectsToPreviousWay = way1.geometry.first().lon==way2.geometry.first().lon || way1.geometry.first().lon==way2.geometry.last().lon || way1.geometry.last().lon==way2.geometry.first().lon || way1.geometry.last().lon==way2.geometry.last().lon;
       return connectsToPreviousWay;
     }
-    var relationMembers = object.elements[fi].members;
+    var relationMembers = element.members;
     var wayMembers=[];
     for(var mi=0; mi<relationMembers.length; mi++){
       var member=relationMembers[mi];
@@ -101,10 +131,11 @@ OverpassJsonFormat.prototype.readFeatures=function(objectSource, opt_options){
         ), false, opt_options);
         var feature = new ol.Feature();
         feature.stylename="busstop";
+        feature.caption = getCaption(member.ref);
         feature.setGeometry(pointGeometry);
         features.push( feature );
         
-        if(member.role==="stop"){
+        if(member.role==="stop" || member.role==="platform"){
           stopRoute.appendCoordinate(pointCoordinates);
         }
       }
@@ -170,8 +201,18 @@ var vectorSource = new ol.source.Vector({
       return [olExtent[1], olExtent[0], olExtent[3], olExtent[2]];
     };
     var query='[out:json];'
-      //+ 'relation('+overpassExtent(epsg4326Extent).join(',')+')[type=route][route~"bus|train"];'
       + 'relation('+overpassExtent(epsg4326Extent).join(',')+')[type=route][route~"bus"];'
+      + 'foreach('
+      + '('
+      // Add relation (which the the context item of the current loop) to current set.
+      + '  ._;'
+      // Also add all nodes that are member of this relation.
+      + '  node(r)'
+      + ');'
+      // Emit relations and their node members.
+      + 'out geom;'
+      + ');'
+      // Emit geometry and tags of matched objects.
       + 'out geom qt;';
     return 'https://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
   },
@@ -204,6 +245,24 @@ var vector = new ol.layer.Vector({
           })
         }));
       });
+    }
+    if(resolution<5 && feature.caption){
+      featureStyle.push(
+        new ol.style.Style({
+          text: new ol.style.Text({
+            textAlign: "left",
+            textBaseline: "middle",
+            // font: font,
+            text: feature.caption,
+            fill: new ol.style.Fill({color: 'rgba(255, 0, 0, 1.0)'}),
+            // Can't use stroke for now because this really slows Firefox down.
+//             stroke: new ol.style.Stroke({color: 'rgba(255, 255, 255, 1.0)', width: 3}),
+            offsetX: 10,
+            offsetY: 0,
+            rotation: 0
+          })
+        })
+      );
     }
     return featureStyle;
   },
