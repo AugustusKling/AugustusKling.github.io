@@ -312,26 +312,19 @@ raster.on('postcompose', function(event) {
   var canvas = context.canvas;
   var width = canvas.width;
   var height = canvas.height;
-  var inputData = context.getImageData(0, 0, width, height).data;
+  var imageData = context.getImageData(0, 0, width, height);
+  var pixelData = imageData.data;
 
-  var output = context.createImageData(width, height);
-  var outputData = output.data;
-  
-  for (var pixelY = 0; pixelY < height; ++pixelY) {
-    var pixelsAbove = pixelY * width;
-    for (var pixelX = 0; pixelX < width; ++pixelX) {
-      var outputIndex = (pixelsAbove + pixelX) * 4;
-      var r=inputData[outputIndex];
-      var g=inputData[outputIndex+1];
-      var b=inputData[outputIndex+2];
-      var grayValue = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      outputData[outputIndex] = grayValue;
-      outputData[outputIndex + 1] = grayValue;
-      outputData[outputIndex + 2] = grayValue;
-      outputData[outputIndex + 3] = inputData[outputIndex+3];
-    }
+  for (var outputIndex = 0; outputIndex < pixelData.length; outputIndex += 4) {
+    var r=pixelData[outputIndex];
+    var g=pixelData[outputIndex+1];
+    var b=pixelData[outputIndex+2];
+    var grayValue = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    pixelData[outputIndex] = grayValue;
+    pixelData[outputIndex + 1] = grayValue;
+    pixelData[outputIndex + 2] = grayValue;
   }
-  context.putImageData(output, 0, 0);
+  context.putImageData(imageData, 0, 0);
 });
 
 var map = new ol.Map({
