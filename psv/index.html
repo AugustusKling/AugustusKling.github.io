@@ -7,14 +7,50 @@
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 <link rel="stylesheet" href="ol/en/v3.10.1/css/ol.css" type="text/css">
 <script src="ol/en/v3.10.1/build/ol-debug.js"></script>
-
+<style type="text/css">
+#queryContainer {
+  position: absolute;
+  top:0;
+  right:0;
+  background: #fff;
+}
+#queryContainer:hover {
+    height: 100%;
+    width: 400px;
+    z-index: 1;
+}
+#queryContainer textarea, #queryContainer button {
+  display: none;
+}
+#queryContainer:hover textarea {
+  display: block;
+  width: 100%;
+  height: 80%;
+}
+#queryContainer:hover button {
+  display: block;
+}
+</style>
 </head>
 <body>
 <div class="container-fluid">
 
 <div class="row-fluid">
   <div class="span12"><p>Bus routes, data by <a href="http://www.openstreetmap.org/">OpenStreetMap</a> relased under <a href="http://opendatacommons.org/licenses/odbl/">ODbL</a>. Provided by <a href="http://www.overpass-api.de/">Overpass API</a>.</p>
-  <p>Bus routes are red strokes, nodes in red are any nodes that are members of a route relation. The green dashed arrows connect the nodes with role stop in order of appearance in the relation's member list.</span>
+  <p>Bus routes are red strokes, nodes in red are any nodes that are members of a route relation. The green dashed arrows connect the nodes with role stop in order of appearance in the relation's member list.</p>
+  <div id="queryContainer"><p>Edit Overpass API query / filter data</p><textarea id="overpassQuery">relation({{bbox}})[type=route][route~"bus"];
+foreach(
+(
+// Add relation (which the the context item of the current loop) to current set.
+  ._;
+  // Also add all nodes that are member of this relation.
+  node(r)
+);
+// Emit relations and their node members.
+out geom;
+);
+// Emit geometry and tags of matched objects.
+out geom qt;</textarea><br><button id="refresh">Execute Query</button><button id="reset">Reset Query</button></div></div>
   <div class="span12">
     <div id="map" class="map"></div>
   </div>
@@ -22,6 +58,11 @@
 
 </div>
 <script>
+var overpassQueryTextarea = document.getElementById("overpassQuery");
+if(localStorage.overpassQuery){
+  overpassQueryTextarea.value = localStorage.overpassQuery;
+}
+
 var styles = {
   "busroute": [
     new ol.style.Style({
@@ -85,7 +126,7 @@ OverpassJsonFormat.prototype.readFeatures=function(objectSource, opt_options){
           caption.push(element.tags.name);
         }
         if(element.tags.route_ref){
-          caption.push(element.tags.route_ref);
+          caption.push("("+element.tags.route_ref+")");
         }
         return caption.join(" ");
       }
@@ -200,20 +241,8 @@ var vectorSource = new ol.source.Vector({
     var overpassExtent = function(olExtent){
       return [olExtent[1], olExtent[0], olExtent[3], olExtent[2]];
     };
-    var query='[out:json];'
-      + 'relation('+overpassExtent(epsg4326Extent).join(',')+')[type=route][route~"bus"];'
-      + 'foreach('
-      + '('
-      // Add relation (which the the context item of the current loop) to current set.
-      + '  ._;'
-      // Also add all nodes that are member of this relation.
-      + '  node(r)'
-      + ');'
-      // Emit relations and their node members.
-      + 'out geom;'
-      + ');'
-      // Emit geometry and tags of matched objects.
-      + 'out geom qt;';
+    var bbox = overpassExtent(epsg4326Extent).join(',');
+    var query='[out:json];' + overpassQueryTextarea.value.replace("{{bbox}}", bbox);
     return 'https://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
   },
   strategy: ol.loadingstrategy.tile(ol.tilegrid.createXYZ({
@@ -314,6 +343,32 @@ var map = new ol.Map({
     maxZoom: 19,
     zoom: 13
   })
+});
+
+document.getElementById("refresh").addEventListener("click", function(){
+  localStorage.overpassQuery=overpassQueryTextarea.value;
+  
+  // Clear ignore list.
+  processedIds=[];
+  // Clear features and reload.
+  vectorSource.clear();
+});
+document.getElementById("reset").addEventListener("click", function(){
+  var query='relation({{bbox}})[type=route][route~"bus"];\n'
+    + 'foreach(\n'
+    + '(\n'
+    + '// Add relation (which the the context item of the current loop) to current set.\n'
+    + '  ._;\n'
+    + '// Also add all nodes that are member of this relation.\n'
+    + '  node(r)\n'
+    + ');\n'
+    + '// Emit relations and their node members.\n'
+    + 'out geom;\n'
+    + ');\n'
+    + '// Emit geometry and tags of matched objects.\n'
+    + 'out geom qt;';
+  overpassQueryTextarea.value=query;
+  delete localStorage.overpassQuery;
 });
 
 </script>
