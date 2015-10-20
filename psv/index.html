@@ -38,19 +38,14 @@
 <div class="row-fluid">
   <div class="span12"><p>Bus routes, data by <a href="http://www.openstreetmap.org/">OpenStreetMap</a> relased under <a href="http://opendatacommons.org/licenses/odbl/">ODbL</a>. Provided by <a href="http://www.overpass-api.de/">Overpass API</a>.</p>
   <p>Bus routes are red strokes, nodes in red are any nodes that are members of a route relation. The green dashed arrows connect the nodes with role stop in order of appearance in the relation's member list.</p>
-  <div id="queryContainer"><p>Edit Overpass API query / filter data</p><textarea id="overpassQuery">relation({{bbox}})[type=route][route~"bus"];
-foreach(
-(
-// Add relation (which the the context item of the current loop) to current set.
-  ._;
-  // Also add all nodes that are member of this relation.
+  <div id="queryContainer"><p>Edit Overpass API query / filter data</p><textarea id="overpassQuery">(
+  // Add route relation to current set.
+  relation({{bbox}})[type=route][route~"bus"];
+  // Also add all nodes that are member of the just found relations.
   node(r)
 );
-// Emit relations and their node members.
-out geom;
-);
 // Emit geometry and tags of matched objects.
-out geom qt;</textarea><br><button id="refresh">Execute Query</button><button id="reset">Reset Query</button></div></div>
+out geom;</textarea><br><button id="refresh">Execute Query</button><button id="reset">Reset Query</button></div></div>
   <div class="span12">
     <div id="map" class="map"></div>
   </div>
@@ -347,19 +342,14 @@ document.getElementById("refresh").addEventListener("click", function(){
   vectorSource.clear();
 });
 document.getElementById("reset").addEventListener("click", function(){
-  var query='relation({{bbox}})[type=route][route~"bus"];\n'
-    + 'foreach(\n'
-    + '(\n'
-    + '// Add relation (which the the context item of the current loop) to current set.\n'
-    + '  ._;\n'
-    + '// Also add all nodes that are member of this relation.\n'
+  var query='(\n'
+    + '  // Add route relation to current set.\n'
+    + '  relation({{bbox}})[type=route][route~"bus"];\n'
+    + '  // Also add all nodes that are member of the just found relations.\n'
     + '  node(r)\n'
     + ');\n'
-    + '// Emit relations and their node members.\n'
-    + 'out geom;\n'
-    + ');\n'
     + '// Emit geometry and tags of matched objects.\n'
-    + 'out geom qt;';
+    + 'out geom;';
   overpassQueryTextarea.value=query;
   delete localStorage.overpassQuery;
 });
